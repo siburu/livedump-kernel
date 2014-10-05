@@ -18,6 +18,8 @@
  * MA  02110-1301, USA.
  */
 
+#include <asm/wrprotect.h>
+
 #include <linux/kernel.h>
 #include <linux/fs.h>
 #include <linux/miscdevice.h>
@@ -26,11 +28,54 @@
 #define DEVICE_NAME	"livedump"
 
 #define LIVEDUMP_IOC(x)	_IO(0xff, x)
+#define LIVEDUMP_IOC_START LIVEDUMP_IOC(1)
+#define LIVEDUMP_IOC_SWEEP LIVEDUMP_IOC(2)
+#define LIVEDUMP_IOC_INIT LIVEDUMP_IOC(100)
+#define LIVEDUMP_IOC_UNINIT LIVEDUMP_IOC(101)
+
+unsigned long *pgbmp;
+
+static void do_uninit(void)
+{
+	wrprotect_uninit();
+	if (pgbmp) {
+		wrprotect_destroy_page_bitmap(pgbmp);
+		pgbmp = NULL;
+	}
+}
+
+static int do_init(void)
+{
+	int ret;
+
+	ret = -ENOMEM;
+	pgbmp = wrprotect_create_page_bitmap();
+	if (!pgbmp)
+		goto err;
+
+	ret = wrprotect_init(pgbmp, NULL);
+	if (WARN(ret, "livedump: Failed to initialize Protection manager.\n"))
+		goto err;
+
+	return 0;
+err:
+	do_uninit();
+	return ret;
+}
 
 static long livedump_ioctl(
 		struct file *file, unsigned int cmd, unsigned long arg)
 {
 	switch (cmd) {
+	case LIVEDUMP_IOC_START:
+		return wrprotect_start();
+	case LIVEDUMP_IOC_SWEEP:
+		return wrprotect_sweep();
+	case LIVEDUMP_IOC_INIT:
+		return do_init();
+	case LIVEDUMP_IOC_UNINIT:
+		do_uninit();
+		return 0;
 	default:
 		return -ENOIOCTLCMD;
 	}
@@ -48,6 +93,7 @@ static struct miscdevice livedump_misc = {
 static int livedump_exit(struct notifier_block *_, unsigned long __, void *___)
 {
 	misc_deregister(&livedump_misc);
+	do_uninit();
 	return NOTIFY_DONE;
 }
 static struct notifier_block livedump_nb = {

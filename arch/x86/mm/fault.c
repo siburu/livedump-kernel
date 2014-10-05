@@ -18,6 +18,7 @@
 #include <asm/pgalloc.h>		/* pgd_*(), ...			*/
 #include <asm/kmemcheck.h>		/* kmemcheck_*(), ...		*/
 #include <asm/fixmap.h>			/* VSYSCALL_START		*/
+#include <asm/wrprotect.h>		/* wrprotect_is_on, ...		*/
 
 /*
  * Page fault error code bits:
@@ -1017,6 +1018,12 @@ do_page_fault(struct pt_regs *regs, unsigned long error_code)
 
 	/* Get the faulting address: */
 	address = read_cr2();
+
+#ifdef CONFIG_WRPROTECT
+	if (unlikely(wrprotect_is_on))
+		if (wrprotect_page_fault_handler(error_code))
+			return;
+#endif /* CONFIG_WRPROTECT */
 
 	/*
 	 * Detect and handle instructions that would cause a page fault for
