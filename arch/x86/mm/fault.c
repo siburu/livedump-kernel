@@ -21,6 +21,8 @@
 #include <asm/fixmap.h>			/* VSYSCALL_ADDR		*/
 #include <asm/vsyscall.h>		/* emulate_vsyscall		*/
 
+#include <asm/wrprotect.h>		/* wrprotect_is_on, ...		*/
+
 #define CREATE_TRACE_POINTS
 #include <asm/trace/exceptions.h>
 
@@ -1046,6 +1048,12 @@ __do_page_fault(struct pt_regs *regs, unsigned long error_code,
 
 	tsk = current;
 	mm = tsk->mm;
+
+#ifdef CONFIG_WRPROTECT
+	if (unlikely(wrprotect_is_on))
+		if (wrprotect_page_fault_handler(error_code))
+			return;
+#endif /* CONFIG_WRPROTECT */
 
 	/*
 	 * Detect and handle instructions that would cause a page fault for
