@@ -18,10 +18,12 @@
  * MA  02110-1301, USA.
  */
 
+#include "livedump-memdump.h"
 #include <asm/wrprotect.h>
 
 #include <linux/kernel.h>
 #include <linux/fs.h>
+#include <linux/uaccess.h>
 #include <linux/miscdevice.h>
 #include <linux/reboot.h>
 
@@ -38,13 +40,14 @@ unsigned long *pgbmp;
 static void do_uninit(void)
 {
 	wrprotect_uninit();
+	livedump_memdump_uninit();
 	if (pgbmp) {
 		wrprotect_destroy_page_bitmap(pgbmp);
 		pgbmp = NULL;
 	}
 }
 
-static int do_init(void)
+static int do_init(const char *bdevpath)
 {
 	int ret;
 
@@ -53,7 +56,11 @@ static int do_init(void)
 	if (!pgbmp)
 		goto err;
 
-	ret = wrprotect_init(pgbmp, NULL);
+	ret = livedump_memdump_init(pgbmp, bdevpath);
+	if (WARN(ret, "livedump: Failed to initialize Dump manager.\n"))
+		goto err;
+
+	ret = wrprotect_init(pgbmp, livedump_memdump_handle_page);
 	if (WARN(ret, "livedump: Failed to initialize Protection manager.\n"))
 		goto err;
 
@@ -63,16 +70,23 @@ err:
 	return ret;
 }
 
-static long livedump_ioctl(
-		struct file *file, unsigned int cmd, unsigned long arg)
+static long livedump_ioctl(struct file *_, unsigned int cmd, unsigned long arg)
 {
+	long ret;
+	char *path;
+
 	switch (cmd) {
 	case LIVEDUMP_IOC_START:
 		return wrprotect_start();
 	case LIVEDUMP_IOC_SWEEP:
 		return wrprotect_sweep();
 	case LIVEDUMP_IOC_INIT:
-		return do_init();
+		path = getname((char __user *)arg);
+		if (IS_ERR(path))
+			return PTR_ERR(path);
+		ret = do_init(path);
+		putname(path);
+		return ret;
 	case LIVEDUMP_IOC_UNINIT:
 		do_uninit();
 		return 0;

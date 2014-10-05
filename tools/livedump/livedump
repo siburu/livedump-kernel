@@ -3,8 +3,8 @@
 import sys
 import fcntl
 
-def ioctl_init(f):
-	fcntl.ioctl(f, 0xff64)
+def ioctl_init(f, path):
+	fcntl.ioctl(f, 0xff64, path)
 
 def ioctl_uninit(f):
 	fcntl.ioctl(f, 0xff65)
@@ -20,9 +20,15 @@ if __name__ == '__main__':
 	f = open('/dev/livedump')
 	# execute subcommand
 	subcmd = sys.argv[1]
-	if 'init' == subcmd:
-		ioctl_init(f)
-	elif 'uninit' == subcmd:
+	if 'dump' == subcmd or 'init' == subcmd:
+		dumpdisk = sys.argv[2]
+	if 'dump' == subcmd:
+		ioctl_init(f, dumpdisk)
+		ioctl_start(f)
+		ioctl_sweep(f)
+	elif 'init' == subcmd:
+		ioctl_init(f, dumpdisk)
+	elif 'uninit' == subcmd or 'release' == subcmd:
 		ioctl_uninit(f)
 	elif 'start' == subcmd:
 		ioctl_start(f)
